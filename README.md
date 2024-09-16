@@ -1,64 +1,99 @@
-### README
+# Web Scraper and Question-Answering Chatbot
 
-# Health Advisor Agents
-
-This project implements a system of AI agents designed to assist in healthcare tasks, such as summarizing medical reports, finding relevant medical articles, and providing health recommendations based on extracted data. The project uses the `crewai` library to define agents and tasks, and the `langchain_groq` library for natural language processing capabilities.
+This project implements a web scraping tool and a chatbot that provides answers based on the scraped data. The project uses `BeautifulSoup` for web scraping and `langchain_groq` for natural language processing capabilities.
 
 ## Approach
 
-1. **Agent Definition**:
-    - Three main agents are defined: `Pathologist`, `Medical Researcher`, and `Doctor`.
-    - Each agent is assigned a specific role, goal, and backstory, and is powered by the `ChatGroq` language model.
-    - The agents can perform tasks sequentially, retaining memory and context across tasks.
+### Web Scraping (`scrape_data.py`):
+- The script extracts all textual content from a given web page using `BeautifulSoup`.
+- The extracted text is saved to a file (`text_storage.txt`) for later use.
+  
+### Question-Answering Chatbot (`chatbot.py`):
+- The chatbot is powered by the `ChatGroq` language model (Llama3-8b-8192).
+- It reads the scraped content from `text_storage.txt` and answers user queries based on that content.
+- A custom template ensures the chatbot provides precise responses without additional explanations.
 
-2. **Task Definition**:
-    - Tasks are defined in the `tasks.py` file and include:
-        - **Reading and summarizing the blood test report**.
-        - **Finding relevant health articles**.
-        - **Providing health recommendations**.
+### Task Workflow:
+1. **Scraping the Website:**
+   - `scrape_data.py` extracts the content from a URL and saves it in a text file.
+2. **Running the Chatbot:**
+   - `chatbot.py` loads the scraped content and answers user queries by analyzing the data.
+   
+## Installation
 
-3. **PDF Text Extraction**:
-    - The project includes functionality to extract text from a PDF document, representing a medical report.
+### Step 1: Clone the Repository
 
-4. **Crew Execution**:
-    - A crew is formed with the defined agents and tasks, and the execution process is managed in `main.py`.
+```bash
+git clone https://github.com/AjayKuchhadiya/Chat-with-url-data.git
+cd Chat-with-url-data
+```
 
+### Step 2: Install Dependencies
 
-### Installation
+```bash
+python -m venv venv
+source venv/bin/activate   # For Linux/macOS
+# or 
+.\venv\Scripts\activate    # For Windows
+pip install -r requirements.txt
+```
 
-1. **Clone the Repository**:
-    ```bash
-    git clone https://github.com/your-repo/health-advisor-agents.git
-    cd health-advisor-agents
-    cd assignment 
-    ```
+### Step 3: Set Up Environment Variables
 
-2. **Install Dependencies**:
-    ```bash
-    python -m venv venv
-    .\venv\Scripts\activate
-    pip install -r requirements.txt
-    ```
+Create a `.env` file in the root directory with the necessary environment variables:
 
-3. **Set Up Environment Variables**:
-    - Create a `.env` file in the root directory of the project.
-    - Add your API keys and other configurations:
-      ```
-      GROQ_API_KEY=your_groq_api_key
-      SERPER_API_KEY=your_serper_api_key
-      ```
+```bash
+# Example .env file
+GROQ_API_KEY=your_groq_api_key
+```
 
-### Running the Application
+## Running the Application
 
-1. **Prepare a PDF File**:
-    - Ensure you have a PDF file containing the blood test report. You can place it in the root directory or specify its path.
+### Step 1: Scrape Web Content
 
-2. **Execute the Script**:
-    ```bash
-    python main.py path_to_your_pdf_file.pdf
-    ```
+- Open `scrape_data.py` and set the URL you want to scrape.
+- Run the following command:
 
-    Replace `path_to_your_pdf_file.pdf` with the path to your PDF file.
+```bash
+cd src
+python scrape_data.py
+```
 
-3. **Output**:
-    - The script will print the results, including the summary of the blood test report, relevant articles, and health recommendations. It will also save the outputs to specified files (`blood_report_summary.txt`, `health_articles_urls.txt`, `health_recommendations.txt`).
+This will scrape the content from the specified webpage and save it to `text_storage.txt`.
+
+### Step 2: Run the Chatbot
+
+- After the content is scraped, run `chatbot.py` to interact with the chatbot and ask questions based on the scraped data:
+
+```bash
+cd src
+python chatbot.py
+```
+
+- The chatbot will prompt you to enter your queries and will generate answers based on the scraped content.
+
+### Example Usage:
+
+1. First, scrape data from a webpage using:
+
+```bash
+python scrape_data.py
+```
+
+2. Then, interact with the chatbot:
+
+```bash
+python chatbot.py
+```
+
+## Output
+
+- The scraped data is stored in `text_storage.txt`.
+- The chatbot will print responses to the console based on the questions you ask.
+  
+## Notes
+
+- Ensure you have an active internet connection to use the `ChatGroq` model in `chatbot.py`.
+- If you encounter any issues, check that your environment variables (e.g., API keys) are correctly set up in the `.env` file.
+
+```
