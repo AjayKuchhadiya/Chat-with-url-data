@@ -1,0 +1,274 @@
+A Way to Production-ready AI Analytics With RAG? | by Jan Soubusta | GoodData Developers | Medium
+Open in app
+Sign up
+Sign in
+Write
+Sign up
+Sign in
+A Way to Production-ready AI Analytics With RAG?
+Jan Soubusta
+·
+Follow
+Published in
+GoodData Developers
+·
+10 min read
+·
+May 16, 2024
+--
+Listen
+Share
+I published an article,
+Discovering Opportunities for Artificial Business Intelligence
+, in November last year. I explored many use cases and developed prototypes for some (
+open-source repository
+). All prototypes were intentionally as simple as possible and naive — nothing to be exposed to our customers.
+Meanwhile, my colleagues built an AI chatbot and other AI/ML features, shipped them to our customer-facing environment, and wrote
+an article
+about them. But, the same foundation was used — the whole semantic layer, as a context, is sent to LLM(OpenAI). That does not work/scale with large customer solutions containing hundreds of metrics and thousands of attributes/facts.
+The time has come to use a more sophisticated solution. Let me walk you through the path to a new scalable architecture. I will show you how to use technologies like LangChain, vector databases, and OpenAI. I created a new prototype that is again open-source so you can inspire yourself.
+What is RAG
+We used to take a user request, also referred to as a Natural Language Query (NLQ), and extend it with a static prompt (teaching LLM what to do) and a
+whole semantic model
+(attributes, facts, metrics, …) before we sent it to LLM(OpenAI).
+The existing obsolete solution. The whole semantic model is sent as a context to the LLM. This works with a small semantic model, but it can lead to an error (hitting the context window limit of LLM) with large semantic models
+RAG
+(Retrieval-Augmented Generation) provides a new layer to the architecture. Before we send a request to LLM, we semantically search the semantic model and include only semantically relevant entities in the request. Generally, it does not matter if you work with a semantic model or any other knowledge base not included in the target LLM.
+The second diagram solves the above issue by filtering the semantic model before adding it to the context.
+So, how can we semantically search for/filter the knowledge? (e.g., a semantic model)
+Vector and Graph Databases
+This topic is close to my heart because I am a former database specialist. I have worked with OLTP, OLAP, and NoSQL databases for almost two decades. I have been looking forward to when someone develops a new database concept. And now it’s happening with vector and graph databases, isn’t it?
+Well, not really. They are “new” because they are introducing:
+VECTOR data type
+optimized for storing (surprisingly!) vectors
+Vector value is nothing but an array of floats
+New SQL functions
+for various similarity search algorithms
+New types of indexes
+specialized for similarity search
+That is nothing new, IMHO. Remember when databases focused on geospatial analytics appeared? Nowadays, every serious database (e.g., PostgreSQL) provides GEO data types, GEO functions, and specialized indexes. We can expect the same in the case of vectors. We can already see it in the case of PostgreSQL, DuckDB, and others.
+Note: the situation seems to be different with graph databases (e.g., Neo4j). I want to explore them very soon.
+Tens of databases currently support various similarity search algorithms. So, how do you pick the best one for prototyping?
+My criteria (ordered by importance) for the PoC were:
+The database I already know or even use. (e.g., PostgreSQL)
+It provides serverless.
+At least for regular updates of vectors but maybe even for similarity search. Save costs!
+I can pre-filter vectors using metadata.
+This reduces the number of rows before applying the “expensive” similarity search.
+It provides
+vector indexes
+.
+However, do I have to implement an integration with various vector databases from scratch? Has anyone already implemented the decoupling of my code from the implementation details of each vector database?
+Integrating Vector/Graph Databases to RAG
+The community behind the current AI hype is incredible. In the past months, many developers focused on building libraries to improve the developer experience with generative AI. The language of choice was obviously
+Python
+.
+There are two main frameworks:
+LangChain
+LlamaIndex
+While they provide developers with a similar feature set, my feelings about each of them are somewhat different. LangChain handles more under the hood, while with LlamaIndex, you have much more control, but you have to be more explicit when developing AI use cases.
+I decided to start with
+LangChain
+because of the faster onboarding and because I know I can switch to LlamaIndex easily. LangChain supports
+tens of vector databases(stores)
+.
+So, how do you design a RAG flow with LangChain? The
+official documentation
+describes it very well, so just briefly:
+Design a prompt containing placeholders for {
+context
+} and {
+question
+}
+Use
+LangChain Expression Language (LCEL)
+to define the whole so-called chain
+def get_rag_chain()
+return (
+{"context": rag_retriever, "question": RunnablePassthrough()}
+| ChatPromptTemplate.from_template(answer_prompt)
+| ChatOpenAI(**self.openai_kwargs)
+| StrOutputParser()
+)
+Question
+is injected from an input parameter of a function invoking the chain.
+Retriever
+is an abstraction injecting a context from a source(in our case it’s a vector database). It’s created like this:
+(
+Optional
+) Override the default behavior of the vector store or the corresponding retriever
+If something is missing or does not work. I will demonstrate later.
+Create an instance of a vector store.
+Import all data (e.g., whole semantic model) from documents or connect to an already populated DB instance.
+Create a retriever object from the instance of the vector store.
+LLM —
+here, I use ChatOpenAI LLM, but LangChain supports all significant LLM providers.
+Once the chain is created, you can simply invoke it with the question. The under-the-hood prompt is filled with only relevant context and the question, and the whole request is sent to LLM:
+def rag_chain_invoke(self, rag_retriever, question: str, answer_prompt: str):
+set_debug(True) # Will explain later
+return self.get_rag_chain(rag_retriever, answer_prompt).invoke(question)
+But LangChain can provide much more. For instance, some libraries manipulate the chat history or the
+Conversation Buffer
+(in-memory).
+Multi-tenancy
+GoodData has been differentiating itself in this area for a long time. Imagine one deployment serving hundreds of
+customers
+like Visa. Each customer exposes the analytics to thousands of their customers(
+tenants
+), e.g., banks. Isolation of data is very important here.
+I created an instance of a vector
+database
+per
+customer
+and database
+schema
+per
+tenant.
+This approach provides 100% isolation of customers and may provide cross-tenant/schema use cases in the future (cross-schema UNION/JOIN search).
+In the future, I consider storing database files in a directory tree so that there are fewer file nodes in the same directory.
+Prototype
+And now let me give you something real.
+I wanted to keep the first iteration simple:
+Search use case
+Compare naive approach with pure vector database search and full RAG
+Use LangChain + at least 2 vector stores
+I decided to try
+DuckDB
+and
+LanceDB
+as vector databases because:
+DuckDB already powers the heart of our platform (
+article
+)
+Both DuckDB and LanceDB seamlessly integrate with
+Apache Arrow
+Serverless
+approach seems to be feasible with them (in-process regime available)
+The solution can be found in the open-source repository (
+app entry point
+). I had to override LanceDB’s default behavior and fix the LangChain DuckDB library (see the issues chapter below).
+Dilemma — with what granularity should I store/create documents/vectors?
+I created a document/vector for each atomic object from the semantic model(attribute, fact, metric, …). So far, it has provided the best performance/efficiency — when searching for the relevant context, the similarity of each atomic object is calculated separately.
+Another dilemma is whether we should describe complex objects, including their dependencies.
+Imagine a dashboard containing 20 visualizations, each containing several metrics, attributes (dimensions), and filters. Should I describe such a dashboard, including these dependencies?
+Pro:
+I can do a deep search.
+Con:
+Large documents and (potentially) irrelevant search results.
+I implemented it for visualizations to test this approach. I will follow up on that later.
+Here
+is the source code generating documents stored in a vector database.
+First, I connected the prototype to a simple GoodData workspace created by my colleague. There are just a few objects (reported in the header). A query against OpenAI GPT 3.5 Turbo took 3 seconds, so far, so good.
+The time duration is on the left, right above the code.
+Then I switched to our internal BI project, which analyzes the behavior of all our customers. There are hundreds of analytical objects. The same approach does not work at all; we hit the context window limit.
+Error, due to maximum context length of 16K. I tried to send 55K, which is more than triple the context window.
+So let’s try to use a different model with a bigger context window — GPT-4 Turbo:
+Search duration is on the left, right above the code.
+Well, it worked, but it took over
+30 seconds
+!
+Now, let’s switch to the pure Vector search without using LLM. I returned to the GPT 3.5 model to save costs. This use case is valid for the search but not for more complex tasks such as “Create bar chart summing amount by month (created) and product type.”
+Duration is on the left, right above the code.
+Wow, it took only
+700 ms
+to get the top X objects! I used LanceDB as the vector database here, but it works with DuckDB, too, and the performance is similar.
+Finally, let’s try the full RAG, now with DuckDB:
+The search duration is on the left, right above the code.
+It took circa
+2 seconds
+because we had to call LLM (OpenAI). We could use the GPT 3.5 model and save costs.
+By the way, regarding saving costs, look at our billing in OpenAI:
+Bright green is GPT 4, while bright blue is GPT 3.5.
+Over 95%
+of the spike can be attributed to:
+The whole semantic layer is sent instead of just the relevant part.
+GPT-4 must be used instead of GPT 3.5.
+But wait — how were the vector databases populated and the costs related to it?
+I put a “Reset DB” button to the Streamlit app to test the use case anytime.
+The Reset DB button is in the top-right corner.
+With hundreds of analytical objects, populating the vector database takes only about
+6 seconds
+! We just proved that we could feed the database nearly in real-time. I will tackle this topic in the What’s Next chapter as well.
+Issues With Vector Databases
+There is no unified interface between LangChain and vector databases. I hit the following serious issues:
+(
+DuckDB
+) A database does not expose the cosine distance/score — I couldn’t post-sort results based on how semantically close they are to the question.
+(
+DuckDB
+) The search does not work out of the box — I had to specify the vector column explicitly.
+(
+DuckDB
+) Importing data is way too slow.
+(
+LanceDB
+) Full RAG does not work. Raw vectors are injected into the prompt, overflowing its size, so we hit the context window limit of LLM.
+(
+LanceDB
+) I couldn’t override the default table name
+I fixed all the above issues by:
+Pull request to DuckDB LangChain
+Pull request to LanceDB LangChain
+(merged)
+Overriding the default LanceDB VectorStore and Retriever classes
+Even though the interfaces to vector databases are not unified, you can always fix such issues by:
+Contribute to open-source LangChain/LlamaIndex
+Override the default behavior by inheriting and extending existing classes
+Latency
+of the vector search is not good enough for real-time search, where users write a few letters and expect semantically relevant suggestions in tens of milliseconds. I want to follow up on that:
+Alternative vector databases
+Vector indexes
+Use different embeddings than OpenAIEmbeddings() for creating vectors from the input question.
+Obviously having to contact OpenAI cloud for each question brings non-trivial overhead.
+There are models e.g. on HuggingFace you can download and use locally.
+Small Language Models running on the client side
+My colleague Andy Chumak nicely described it in
+this article
+General Issues
+LangChain
+hides a lot of functionality under the hood. Developers like me use tools to provide more control, so I want to evaluate LlamaIndex.
+I struggled with LangChain’s documentation. Though it’s better than what is quite common in rapidly evolving open-source projects, occasionally, it confuses me. Luckily, there is always the option to dig deeper into the open-source code, report a documentation issue, or even fix it.
+The quality of answers strongly depends on the
+quality of the semantic model
+. If you use confusing or too generic IDs, titles, and descriptions for objects in the semantic model, you won’t get precise answers. For example, if you search for “attribute” keyword, the vector search finds all attributes and returns a “random” TOP x. That’s not what you want, right? So, be as specific as possible when defining your semantic model!
+What’s Next
+LlamaIndex as an alternative to LangChain
+Try more vector databases — QDrant, Milvus, Weaviate, PostgreSQL, …
+Graph databases — Neo4j
+Follow-up on Small Language Models
+Prompting, prompting, prompting — cover all meaningful analytics use cases
+LangChain/LlamaIndex agents for more complex use cases
+Integrate AI in our concept of Analytics Lake
+How RAG fits in our architecture (Analytics Lake, FlexQuery). The old (naive) and new(RAG) approaches are highlighted in green.
+Stay In Touch With Us!
+We aim for Q3 but will ship features using our brand-new CI/CD process.
+If you want to test new features (including AI), we can turn on a corresponding feature flag in your GoodData environment — get in touch with us on our
+Slack
+!
+And if you don't have a GoodData environment, you can try our
+free trial
+!
+AI
+Analytics
+Langchain
+Duckdb
+--
+--
+Follow
+Written by
+Jan Soubusta
+108 Followers
+·
+Writer for
+GoodData Developers
+Follow
+Help
+Status
+About
+Careers
+Press
+Blog
+Privacy
+Terms
+Text to speech
+Teams
